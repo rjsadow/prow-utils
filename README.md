@@ -19,3 +19,7 @@ or
 ```bash
 ./script.sh -p
 ```
+
+## Dependencies
+
+This script uses `bash`, `curl`, and `jq` to fetch and process the data. Make sure you have these installed before running the script.
