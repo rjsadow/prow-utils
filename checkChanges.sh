@@ -51,13 +51,15 @@ check_job() {
   fi
 }
 
-# Check all jobs for EKS then run check_job
-check_all_eks_jobs() {
-  # Fetch all jobs from server
+fetch_all_jobs() {
+  local cluster=$1
   local allJobs
-  allJobs=$(curl -s https://prow.k8s.io/prowjobs.js | jq -r '.items[] | select(.spec.cluster == "eks-prow-build-cluster") | "\(.metadata.labels["prow.k8s.io/refs.org"])/\(.metadata.labels["prow.k8s.io/refs.repo"]):\(.spec.job)"' | sort -u || { echo "Error fetching jobs"; exit 1; })
-  
-  # Read the jobs into an array
+  allJobs=$(curl -s https://prow.k8s.io/prowjobs.js | jq -r --arg cluster "$cluster" '.items[] | select(.spec.cluster == $cluster and .metadata.labels["prow.k8s.io/type"] == "presubmit") | "\(.metadata.labels["prow.k8s.io/refs.org"])/\(.metadata.labels["prow.k8s.io/refs.repo"]):\(.spec.job)"' | sort -u || { echo "Error fetching jobs"; exit 1; })
+  echo "${allJobs}"
+}
+
+process_jobs() {
+  local allJobs=$1
   local jobs
   IFS=$'\n' read -d '' -ra jobs <<< "${allJobs}"
   for job in "${jobs[@]}"; do
@@ -68,6 +70,17 @@ check_all_eks_jobs() {
   echo "Finished checking ${#jobs[@]} jobs"
 }
 
+check_all_eks_jobs() {
+  local allJobs=$(fetch_all_jobs "eks-prow-build-cluster")
+  process_jobs "${allJobs}"
+}
+
+check_transition_progress() {
+  local numOfEksJobs=$(fetch_all_jobs "eks-prow-build-cluster" | wc -w)
+  local numOfDefaultJobs=$(fetch_all_jobs "default" | wc -w) 
+  printf "Transitioned %s/%s presubmit jobs from default to the EKS cluster\n" "$numOfEksJobs" "$(($numOfDefaultJobs+${numOfEksJobs}))"
+}
+
 function abs() {
    if [ $1 -lt 0 ]; then
       echo $((-$1))
@@ -76,5 +89,11 @@ function abs() {
    fi
 }
 
-# Start checking jobs
-check_all_eks_jobs
+# Main script
+while getopts "cp" option; do
+  case $option in
+    c) check_all_eks_jobs ;;
+    p) check_transition_progress;;
+    *) echo "Invalid option" >&2 ;;
+  esac
+done
